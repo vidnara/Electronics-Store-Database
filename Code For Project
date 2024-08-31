@@ -1,0 +1,556 @@
+--Q1
+
+-- Create Table Products(
+-- product_id serial,
+-- product_name text,
+-- model text,
+-- brand text,
+-- product_type text,
+-- price int,
+-- color varchar(20),
+-- Primary Key (product_id),
+-- CONSTRAINT valid_product CHECK
+-- (price IS NOT NULL)
+-- );
+
+-- CREATE TABLE Deals (
+-- discount_rate int,
+-- start_date date,
+-- expire_date date,
+-- product_id serial,
+-- FOREIGN KEY (product_id) REFERENCES Products(product_id)
+-- );
+
+
+-- Create Table Users(
+-- user_id serial,
+-- first_Name varchar(50),
+-- last_Name varchar(50),
+-- city text,
+-- state varchar(2),
+-- street_address text,
+-- zipcode varchar(5),
+-- Primary Key (User_id)
+-- );
+
+-- CREATE TABLE Store ( 
+-- name VARCHAR(100),
+--    	city text,
+--     state VARCHAR(2),
+--     street_address text,
+--     zipcode VARCHAR(5),
+--     PRIMARY KEY (name, city, street_address)
+-- );
+
+-- CREATE TABLE Review (
+--     user_id serial,
+--     product_id serial,
+--     star_rating INT,
+--     review_text TEXT,
+--     review_time TIME,
+--     review_date INT,
+--     review_month INT,
+--     review_year INT,
+--     PRIMARY KEY (user_id, product_id),
+--     FOREIGN KEY (user_id) REFERENCES Users(user_id),
+--     FOREIGN KEY (product_id) REFERENCES Products(product_id)
+-- );
+
+-- CREATE TABLE Buys (
+-- user_id INT,
+-- product_id SERIAL, 
+-- Order_ID SERIAL,
+-- Quantity INT,
+-- buy_time Time,
+-- buy_date INT,
+-- buy_month INT,
+-- buy_year INT,
+-- PRIMARY KEY (Order_ID),
+-- Foreign key(product_id) references Products(product_id),
+-- Foreign Key(user_id) references Users(user_id)
+-- );
+
+-- CREATE TABLE Inventory (
+-- product_id serial,
+-- quantity INT,
+-- store_name text,
+-- city text,
+-- street_address text,
+-- Primary key (product_id, store_name,city, street_address),
+-- Foreign key(product_id) references Products(product_id),
+-- Foreign key(store_name,city, street_address) references Store(name, city, street_address)
+-- );
+
+--Q2
+
+--#1 What was the highest-selling product in September 2024? (Analyst)
+SELECT p.product_id, p.product_name, SUM(b.Quantity) AS total_quantity_sold
+FROM Buys b
+JOIN Products p ON b.product_id = p.product_id
+WHERE b.buy_month = 9 AND b.buy_year = 2024
+GROUP BY p.product_id, p.product_name
+ORDER BY total_quantity_sold DESC;
+
+--#2 Which users have bought more than 1 product from a single brand, and what are those brands?
+SELECT u.user_id, u.first_name, u.last_name, p.brand, COUNT(b.product_id) AS product_count
+FROM Buys b
+JOIN Products p ON b.product_id = p.product_id
+JOIN Users u ON b.user_id = u.user_id
+GROUP BY u.user_id, p.brand
+HAVING COUNT(b.product_id) > 1
+ORDER BY product_count DESC;
+
+--#3 When do the best four deals (most amount of savings) for Dell XPS 15 occur? (Customer) (Worked)
+SELECT d.start_Date, d.expire_Date, d.discount_Rate, p.product_name
+FROM Deals d, Products p
+WHERE p.product_name = 'Dell XPS 15'
+and d.Product_id = p.Product_id
+ORDER BY Discount_Rate DESC
+LIMIT 4;
+
+--#4 What are the 5 highest discount rates of Best Buy Philadelphia products with the lowest inventory rate?(Analysist)(Worked)
+SELECT p.product_name, i.quantity, d.discount_rate
+FROM Deals d
+INNER JOIN Inventory i ON d.product_id = i.product_id
+INNER JOIN Products p ON d.product_id = p.product_id
+WHERE i.store_name = 'Best Buy Philadelphia'
+AND i.city = 'Philadelphia'
+AND i.street_address = '123 River St'
+ORDER BY i.quantity ASC, d.discount_rate DESC
+LIMIT 5;
+
+--#5 What are the top 10 products that have seen the highest increase in sales from 2023 to 2024?
+WITH sales_2023 AS (
+    SELECT p.product_id, p.product_name,
+           SUM(b.quantity) AS sales_2023
+    FROM Products p
+	JOIN Buys b ON p.product_id = b.product_id
+    WHERE b.buy_year = 2023
+    GROUP BY p.product_id, p.product_name
+),
+sales_2024 AS (
+    SELECT p.product_id, p.product_name,
+           SUM(b.quantity) AS sales_2024
+    FROM Products p
+	JOIN Buys b ON p.product_id = b.product_id
+    WHERE b.buy_year = 2024
+    GROUP BY p.product_id, p.product_name
+),
+sales_increase AS (
+    SELECT s23.product_id, s23.product_name,
+           s23.sales_2023, s24.sales_2024,
+           (s24.sales_2024 - s23.sales_2023) AS sales_increase
+    FROM sales_2023 s23
+    JOIN sales_2024 s24 ON s23.product_id = s24.product_id
+)
+SELECT si.product_name,
+       si.sales_2023 AS sales_2023, 
+       si.sales_2024 AS sales_2024,
+       si.sales_increase AS sales_increase
+FROM sales_increase si
+ORDER BY si.sales_increase DESC
+LIMIT 10;
+
+
+--#6 What is the product with the highest quantity in each geographic location? (Customer)
+SELECT s.city, s.state, p.product_name, MAX(i.quantity)
+FROM Inventory i
+JOIN Store s ON i.store_name = s.name 
+JOIN Products p ON i.product_id = p.product_id
+AND i.quantity = (
+    SELECT MAX(quantity)
+    FROM Inventory i2
+    WHERE i2.store_name = i.store_name
+) 
+GROUP BY s.city, s.state, p.product_name;
+
+--#7 Which product type has the highest average price in each city? (Financial Manager)
+SELECT i.city, MAX(p.product_type), ROUND(AVG(price)) AS avg_price
+FROM Products p , Inventory i
+WHERE p.product_id = i.product_id
+GROUP BY i.city, p.product_type
+ORDER BY (ROUND(AVG(price))) DESC;
+
+--#8 Find the users who bought products that are only available in the Chicago Best Buy.
+SELECT first_name, last_name
+FROM Users
+WHERE EXISTS (
+    SELECT *
+    FROM Buys
+    JOIN Inventory ON Buys.product_id = Inventory.product_id
+    JOIN Store ON Inventory.store_name = Store.name
+    WHERE Users.user_id = Buys.user_id
+    AND Store.city = 'Chicago'
+    AND NOT EXISTS (
+        SELECT *
+        FROM Inventory AS I2
+        WHERE I2.product_id = Inventory.product_id
+        AND I2.city != 'Chicago'
+    )
+);
+
+--#9 Find all the users who bought stuff with a discount rate over 20%
+SELECT first_name, last_name
+FROM Users
+WHERE user_id IN (
+    SELECT user_id
+    FROM Buys
+    WHERE product_id IN (
+        SELECT product_id
+        FROM Deals
+        WHERE discount_rate > 
+    )
+);
+--#10. Which users give the lowest reviews BY product type
+SELECT p.product_type, information.user_id, MIN(mean_rating) as lowest_rating
+FROM Products p
+JOIN (
+    SELECT u.user_id, r.product_id, AVG(r.star_rating) AS mean_rating
+    FROM Review r
+    JOIN Users u ON u.user_id = r.user_id
+    GROUP BY u.user_id, r.product_id
+) as information ON p.product_id = information.product_id
+GROUP BY p.product_type, information.user_id
+ORDER BY lowest_rating ASC;
+	
+-- OUR FOUR DEMO QUESTIONS
+
+--#Q3: When do the best four deals (most amount of savings) for Dell XPS 15 occur? (Customer) (Worked)
+--Jiajia Lin:
+SELECT d.start_Date, d.expire_Date, d.discount_Rate, p.product_name
+-- creates columns start date, expire date, discount rate (percentage), and product nae
+FROM Deals d, Products p
+-- the two tables we are pulling from to compile our data, Deals and Products
+WHERE p.product_name = 'Dell XPS 15'
+-- chooses only rows where the product is the Dell XPS 15
+and d.Product_id = p.Product_id
+-- natural join
+ORDER BY Discount_Rate DESC
+-- orders in descending manner so we will get the highest discount rates first
+LIMIT 4;
+-- limits it to four deals.
+
+-- Q5:  What are the top 2 products that have seen the highest increase in sales from 2023 to 2024?
+WITH sales_2023 AS (
+    SELECT p.product_id, p.product_name,
+	-- selects product_id and product_name as columns
+           SUM(b.quantity) AS sales_2023
+	-- sum of each products quantity 
+    FROM Products p
+	JOIN Buys b ON p.product_id = b.product_id
+	-- takes information in from the buys table and products table, does natural join
+    WHERE b.buy_year = 2023
+	-- selects only the year 2023
+    GROUP BY p.product_id, p.product_name
+	-- the required group bys
+),
+sales_2024 AS (
+	-- sales_2024 is the same thing as sales_2023 but for 2024 instead
+    SELECT p.product_id, p.product_name,
+           SUM(b.quantity) AS sales_2024
+    FROM Products p
+	JOIN Buys b ON p.product_id = b.product_id
+    WHERE b.buy_year = 2024
+    GROUP BY p.product_id, p.product_name
+),
+sales_increase AS (
+    SELECT s23.product_id, s23.product_name,
+           s23.sales_2023, s24.sales_2024,
+           (s24.sales_2024 - s23.sales_2023) AS sales_increase -- subtracting sales_2023 from sales_2024 gives us the improvement
+	-- creates columns for the product id, name, the sales in 2023, the sales in 2024, and the difference between the two
+    FROM sales_2023 s23
+    JOIN sales_2024 s24 ON s23.product_id = s24.product_id
+	-- joins together the sales_2023 and sales_2024
+)
+SELECT si.product_name,
+       si.sales_2023 AS sales_2023, 
+       si.sales_2024 AS sales_2024,
+       si.sales_increase AS sales_increase
+	-- creates columns using the results from our sales_increase table
+FROM sales_increase si
+ORDER BY si.sales_increase DESC
+-- orders values in descending fashion so that the highest improvements come first
+LIMIT 2;
+-- limits to ten highest
+
+--Sabrina Turnes:
+-- Q2: Which users have bought more than 1 product from a single brand, and what are those brands?
+SELECT u.user_id, u.first_name, u.last_name, p.brand, COUNT(b.product_id) AS product_count
+--display user id, first and last name, brand and quantity
+FROM Buys b
+JOIN Products p ON b.product_id = p.product_id
+JOIN Users u ON b.user_id = u.user_id
+GROUP BY u.user_id, p.brand
+--show how many products each user has bought from each brand
+HAVING COUNT(b.product_id) > 1
+ORDER BY product_count DESC;
+--orders highest to lowest on product count
+
+
+--Vidhya Narayanan:
+-- Q6: What is the product with the highest quantity in each geographic location? (Customer)
+SELECT s.city, s.state, p.product_name, MAX(i.quantity)
+FROM Inventory i
+JOIN Store s ON i.store_name = s.name
+JOIN Products p ON i.product_id = p.product_id
+AND i.quantity = (
+    SELECT MAX(quantity)
+    FROM Inventory i2
+    WHERE i2.store_name = i.store_name
+) 
+GROUP BY s.city, s.state, p.product_name;
+--#Q4
+
+-- What we learned during the process of designing and implementing a database:
+
+-- At first when we were designing the database, we had a much more simplisitc approach with only about half the entities we currently have in the ERD. But we put much more thought into our business scenario (an electronics store) and took some time
+-- to go through the Best Buy website and take note of the different information we could find. Immediately we were able to add more entities and attributes. If we were to do this process again, I think the most important thing would be doing research 
+--on our business scenario and trying to interact with information through the eyes of a customer or other roles so that we have a more accurate perspective of what would make an effective database.
+
+-- What was difficult and how we addressed any challenges:
+
+-- A difficulty we had during the process was understanding how to break down our entities/tables. For example, when we initially made our products table, we included a quantity attribute. We realized this did not make sense as it was continuously 
+-- changing data and that it would make more sense to add attributes to a relationship to best represent this and ultimately when we made a table for this relationship, we realized this was the right decision. Sometimes it takes thinking further ahead about
+-- use and redunancy that is helpful with design. Another challenge we had was with our deals/coupons table. Initially we had an entity of a discount rate that applied to a user account and each individual user could use coupons. We had difficulty with
+--trying to represent this accurately in the ERD. Upon further reflection, we realized this was not very common anymore to have these sorts of "savings" accounts, so we decided to change it so there are deals that could apply to all products which are much more common for shopping experiences today.
+
+
+--INSERTING DATA 
+-- Product table
+-- INSERT INTO Products (product_id, product_name, model, brand, product_type, price, color) VALUES
+-- (1, 'iPhone 14', 'MPUH3LL/A', 'Apple', 'Cell phones', 680, 'Midnight'),
+-- (2, 'Apple Watch Series 9', 'MR9A3LL/A', 'Apple', 'Smartwatches & Accessories', 429, 'Midnight'),
+-- (3, 'Therabody Compression System', 'AIRBDLMP2-PKG-US', 'Apple', 'Laptops', 1499, 'Silver'),
+-- (4, 'Apple Airpods', 'MV7N2AM/A', 'Apple', 'Headphones', 99, 'White'),
+-- (5, ' ', 'Yoga 7i', 'Lenovo', 'Laptop', 7000, 'Storm grey'),
+-- (6, 'Product6', 'ModelA', 'BrandY', 'Food', 872, 'Blue'),
+-- (7, 'Product7', 'ModelC', 'BrandZ', 'Food', 622, 'Black'),
+-- (8, 'Product8', 'ModelB', 'BrandZ', 'Books', 952, 'Green'),
+-- (9, 'Product9', 'ModelB', 'BrandX', 'Furniture', 592, 'White'),
+-- (10, 'Product10', 'ModelB', 'BrandX', 'Food', 719, 'Black');
+
+-- Store table
+-- INSERT INTO Store (name, city, state, street_address, zipcode) 
+-- VALUES 
+-- ('Store1', 'New York', 'NY', '123 Main St', '10001'),
+-- ('Store2', 'Los Angeles', 'CA', '456 Elm St', '90001'),
+-- ('Store3', 'Chicago', 'IL', '789 Oak St', '60007'),
+-- ('Store4', 'Houston', 'TX', '101 Pine St', '77002'),
+-- ('Store5', 'Miami', 'FL', '202 Maple St', '33101'),
+-- ('Store6', 'Seattle', 'WA', '303 Cedar St', '98101'),
+-- ('Store7', 'San Francisco', 'CA', '404 Birch St', '94102'),
+-- ('Store8', 'Boston', 'MA', '505 Walnut St', '02108'),
+-- ('Store9', 'Philadelphia', 'PA', '606 Pine St', '19102'),
+-- ('Store10', 'Dallas', 'TX', '707 Elm St', '75201');
+
+
+-- Deals table
+-- INSERT INTO Deals (discount_rate, start_date, expire_date, product_id) VALUES
+-- (6, '2021-09-25', '2022-04-27', 6),
+-- (33, '2024-02-05', '2022-07-06', 2),
+-- (18, '2021-12-16', '2022-07-11', 7),
+-- (33, '2020-06-07', '2020-07-09', 5),
+-- (14, '2020-12-25', '2022-07-01', 3);
+
+-- Users table
+-- INSERT INTO Users (first_Name, last_Name, city, state, street_address, zipcode) 
+-- VALUES 
+-- ('John', 'Doe', 'New York', 'NY', '123 Main St', '10001'),
+-- ('Jane', 'Smith', 'Los Angeles', 'CA', '456 Elm St', '90001'),
+-- ('Alice', 'Johnson', 'Chicago', 'IL', '789 Oak St', '60007'),
+-- ('Bob', 'Brown', 'Houston', 'TX', '101 Pine St', '77002'),
+-- ('Eve', 'Williams', 'Miami', 'FL', '202 Maple St', '33101'),
+-- ('Charlie', 'Jones', 'Seattle', 'WA', '303 Cedar St', '98101'),
+-- ('David', 'Garcia', 'San Francisco', 'CA', '404 Birch St', '94102'),
+-- ('Emily', 'Martinez', 'Boston', 'MA', '505 Walnut St', '02108'),
+-- ('Frank', 'Lopez', 'Philadelphia', 'PA', '606 Pine St', '19102'),
+-- ('Grace', 'Hernandez', 'Dallas', 'TX', '707 Elm St', '75201');
+
+--Review table
+-- INSERT INTO Review VALUES
+-- (5, 9, 1, 'Review text 0', '18:55:00', 10, 4, 2024),
+-- (2, 2, 2, 'Review text 1', '02:15:00', 27, 2, 2023),
+-- (4, 10, 5, 'Review text 2', '14:35:00', 5, 6, 2024),
+-- (4, 8, 3, 'Review text 3', '18:07:00', 27, 11, 2024),
+-- (9, 3, 3, 'Review text 4', '22:03:00', 4, 6, 2024),
+-- (8, 5, 1, 'Review text 5', '19:39:00', 8, 7, 2023),
+-- (4, 5, 2, 'Review text 6', '08:02:00', 25, 11, 2024),
+-- (2, 1, 4, 'Review text 7', '15:59:00', 1, 4, 2024),
+-- (6, 1, 1, 'Review text 8', '04:27:00', 20, 12, 2024),
+-- (10, 8, 4, 'Review text 9', '13:28:00', 6, 8, 2023);
+
+--Buys table
+-- INSERT INTO Buys VALUES
+-- (2, 1, 1, 5, '00:22:00', 20, 9, 2024),
+-- (3, 9, 2, 2, '21:22:00', 11, 10, 2023),
+-- (5, 4, 3, 5, '14:28:00', 14, 8, 2024),
+-- (9, 5, 4, 4, '14:25:00', 20, 11, 2023),
+-- (8, 2, 5, 3, '23:23:00', 14, 8, 2023),
+-- (10, 8, 6, 3, '12:21:00', 21, 9, 2024),
+-- (10, 4, 7, 2, '13:48:00', 12, 1, 2024),
+-- (8, 3, 8, 3, '07:59:00', 8, 6, 2024),
+-- (9, 7, 9, 5, '05:44:00', 15, 3, 2023),
+-- (5, 6, 10, 3, '05:12:00', 21, 4, 2023);
+
+--Inventory tablke
+-- INSERT INTO Inventory (product_id, quantity, store_name, city, street_address) VALUES
+-- (1, 96, 'Store6', 'Seattle', '303 Cedar St'),
+-- (3, 95, 'Store1', 'New York', '123 Main St'),
+-- (2, 82, 'Store9', 'Philadelphia', '606 Pine St'),
+-- (8, 53, 'Store7', 'San Francisco', '404 Birch St'),
+-- (9, 2, 'Store4', 'Houston', '101 Pine St'),
+-- (3, 75, 'Store8', 'Boston', '505 Walnut St'),
+-- (2, 43, 'Store3', 'Chicago', '789 Oak St'),
+-- (10, 29, 'Store10', 'Dallas', '707 Elm St'),
+-- (9, 45, 'Store5', 'Miami', '202 Maple St'),
+-- (7, 63, 'Store2', 'Los Angeles', '456 Elm St');
+
+
+ --INSERT INTO Buys VALUES
+-- (2, 1, 1, 5, '00:22:00', 20, 9, 2024),
+-- (3, 9, 2, 2, '21:22:00', 11, 10, 2023),
+-- (5, 4, 3, 5, '14:28:00', 14, 8, 2024),
+-- (9, 5, 4, 4, '14:25:00', 20, 11, 2023),
+-- (8, 2, 5, 3, '23:23:00', 14, 8, 2023),
+-- (10, 8, 6, 3, '12:21:00', 21, 9, 2024),
+-- (10, 4, 7, 2, '13:48:00', 12, 1, 2024),
+-- (8, 3, 8, 3, '07:59:00', 8, 6, 2024),
+-- (9, 7, 9, 5, '05:44:00', 15, 3, 2023),
+-- (5, 6, 10, 3, '05:12:00', 21, 4, 2023),
+-- (2, 4, 11, 1, '19:28:00', 20, 9, 2024),
+-- (3, 1, 12, 3, '12:02:00', 11, 10, 2023),
+-- (2, 4, 13, 1, '07:10:00', 6, 7, 2023),
+-- (3, 2, 14, 2, '12:42:00', 4, 12, 2023);
+
+
+-- INSERT INTO Products (product_name, model, brand, product_type, price, color) 
+-- VALUES 
+-- ('Samsung 55" Smart TV', 'QLED', 'Samsung', 'TV', 999, 'Black'),
+-- ('Apple iPhone 13', '13', 'Apple', 'Smartphone', 999, 'Space Gray'),
+-- ('Sony PlayStation 5', 'PS5', 'Sony', 'Gaming Console', 499, 'White'),
+-- ('Bose QuietComfort 35 II', 'QC35 II', 'Bose', 'Headphones', 299, 'Black'),
+-- ('Canon EOS Rebel T7', 'Rebel T7', 'Canon', 'Camera', 549, 'Black'),
+-- ('Dell XPS 15', 'XPS 15', 'Dell', 'Laptop', 1399, 'Silver'),
+-- ('LG 65" OLED TV', 'OLED', 'LG', 'TV', 1499, 'Silver'),
+-- ('Microsoft Xbox Series X', 'Series X', 'Microsoft', 'Gaming Console', 499, 'Black'),
+-- ('Apple AirPods Pro', 'AirPods Pro', 'Apple', 'Earbuds', 249, 'White'),
+-- ('Samsung Galaxy Watch 4', 'Galaxy Watch 4', 'Samsung', 'Smartwatch', 249, 'Black'),
+-- ('Samsung Galaxy S21 Ultra', 'S21 Ultra', 'Samsung', 'Smartphone', 1199, 'Phantom Black'),
+-- ('Sony WH-1000XM4', 'WH-1000XM4', 'Sony', 'Headphones', 349, 'Silver'),
+-- ('Microsoft Surface Pro 7', 'Surface Pro 7', 'Microsoft', 'Tablet', 899, 'Platinum'),
+-- ('Dyson V11 Torque Drive', 'V11 Torque Drive', 'Dyson', 'Vacuum Cleaner', 699, 'Blue'),
+-- ('Nintendo Switch', 'Switch', 'Nintendo', 'Gaming Console', 299, 'Neon Red/Neon Blue'),
+-- ('LG 43" Smart TV', 'Smart TV', 'LG', 'TV', 499, 'Black'),
+-- ('Sony WH-1000XM4', 'WH-1000XM4', 'Sony', 'Headphones', 349, 'Silver'),
+-- ('Apple MacBook Air', 'MacBook Air', 'Apple', 'Laptop', 999, 'Space Gray'),
+-- ('Nintendo Switch', 'Switch', 'Nintendo', 'Gaming Console', 299, 'Neon Red/Neon Blue'),
+-- ('Fitbit Versa 3', 'Versa 3', 'Fitbit', 'Smartwatch', 229, 'Black');
+
+-- INSERT INTO Deals (discount_rate, start_date, expire_date, product_id)
+-- VALUES 
+-- (10, '2024-03-01', '2024-03-15', 1),
+-- (5, '2024-03-05', '2024-03-10', 2),
+-- (15, '2024-03-10', '2024-03-20', 3),
+-- (8, '2024-03-03', '2024-03-08', 4),
+-- (12, '2024-03-07', '2024-03-14', 5),
+-- (5, '2024-03-02', '2024-03-09', 6),
+-- (20, '2024-03-09', '2024-03-15', 7),
+-- (10, '2024-03-15', '2024-03-25', 8),
+-- (5, '2024-03-20', '2024-03-30', 9),
+-- (15, '2024-03-12', '2024-03-22', 10),
+-- (15, '2024-03-10', '2024-03-20', 21),
+-- (8, '2024-03-03', '2024-03-08', 13),
+-- (12, '2024-03-07', '2024-03-14', 14),
+-- (20, '2024-03-09', '2024-03-15', 15),
+-- (10, '2024-03-15', '2024-03-25', 16),
+-- (15, '2024-03-10', '2024-03-20', 6),
+-- (8, '2024-03-03', '2024-03-08', 7),
+-- (12, '2024-03-07', '2024-03-14', 8),
+-- (5, '2024-03-02', '2024-03-09', 9),
+-- (20, '2024-03-09', '2024-03-15', 10);
+
+-- INSERT INTO Users (first_name, last_name, city, state, street_address, zipcode) 
+-- VALUES 
+-- ('John', 'Doe', 'New York', 'NY', '123 Main St', '10001'),
+-- ('Jane', 'Smith', 'Los Angeles', 'CA', '456 Oak St', '90001'),
+-- ('Michael', 'Johnson', 'Chicago', 'IL', '789 Elm St', '60601'),
+-- ('Emily', 'Brown', 'Houston', 'TX', '321 Pine St', '77001'),
+-- ('Christopher', 'Williams', 'Philadelphia', 'PA', '654 Maple St', '19101'),
+-- ('Alice', 'Johnson', 'San Francisco', 'CA', '789 Elm St', '94101'),
+-- ('Bob', 'Anderson', 'Seattle', 'WA', '321 Pine St', '98101'),
+-- ('Ella', 'Martinez', 'Miami', 'FL', '654 Maple St', '33101'),
+-- ('David', 'Thompson', 'Denver', 'CO', '987 Oak St', '80201'),
+-- ('Grace', 'Wilson', 'Austin', 'TX', '246 Cedar St', '73301'),
+-- ('Alice', 'Johnson', 'Miami', 'FL', '123 Ocean Dr', '33101'),
+-- ('Bob', 'Smith', 'Seattle', 'WA', '456 Pine St', '98101'),
+-- ('Emma', 'Miller', 'Atlanta', 'GA', '789 Peachtree St', '30301'),
+-- ('James', 'Davis', 'Denver', 'CO', '321 Mountain Rd', '80201'),
+-- ('Olivia', 'Brown', 'Dallas', 'TX', '654 Main St', '75201');
+
+-- INSERT INTO Store (name, city, state, street_address, zipcode) 
+-- VALUES 
+-- ('Best Buy NYC', 'New York', 'NY', '789 Broadway', '10002'),
+-- ('Best Buy LA', 'Los Angeles', 'CA', '101 Hollywood Blvd', '90002'),
+-- ('Best Buy Chicago', 'Chicago', 'IL', '456 Lake St', '60602'),
+-- ('Best Buy Houston', 'Houston', 'TX', '789 Forest St', '77002'),
+-- ('Best Buy Philadelphia', 'Philadelphia', 'PA', '123 River St', '19102'),
+-- ('Best Buy San Francisco', 'San Francisco', 'CA', '123 Market St', '94102'),
+-- ('Best Buy Seattle', 'Seattle', 'WA', '456 Pine St', '98102'),
+-- ('Best Buy Miami', 'Miami', 'FL', '789 Ocean Dr', '33102'),
+-- ('Best Buy Denver', 'Denver', 'CO', '101 Mountain Ave', '80202'),
+-- ('Best Buy Austin', 'Austin', 'TX', '654 River Rd', '73302'),
+-- ('Best Buy Miami', 'Miami', 'FL', '789 Ocean Ave', '33102'),
+-- ('Best Buy Seattle', 'Seattle', 'WA', '101 Pine Blvd', '98102'),
+-- ('Best Buy Atlanta', 'Atlanta', 'GA', '456 Peachtree Blvd', '30302'),
+-- ('Best Buy Denver', 'Denver', 'CO', '789 Mountain Blvd', '80202'),
+-- ('Best Buy Dallas', 'Dallas', 'TX', '123 Main Blvd', '75202');
+
+
+-- INSERT INTO Review (user_id, product_id, star_rating, review_text, review_time, review_date, review_month, review_year)
+-- VALUES 
+-- (1, 1, 5, 'Great TV, excellent picture quality!', '12:00:00', 20240307, 3, 2024),
+-- (2, 2, 4, 'Good phone, but battery life could be better.', '13:00:00', 20240306, 3, 2024),
+-- (3, 3, 5, 'Amazing console, love the graphics!', '14:00:00', 20240305, 3, 2024),
+-- (4, 4, 4, 'Very comfortable headphones, noise cancellation works well.', '15:00:00', 20240304, 3, 2024),
+-- (5, 5, 3, 'Decent camera, but the autofocus is a bit slow.', '16:00:00', 20240303, 3, 2024),
+-- (6, 1, 4, 'Great phone, fast and reliable!', '12:00:00', 20240307, 3, 2024),
+-- (7, 2, 5, 'Best headphones I ever owned, amazing noise cancellation!', '13:00:00', 20240306, 3, 2024),
+-- (8, 3, 3, 'Surface Pro 7 is decent, but battery life could be better.', '14:00:00', 20240305, 3, 2024),
+-- (9, 4, 4, 'Dyson V11 is powerful and easy to use, worth the price.', '15:00:00', 20240304, 3, 2024),
+-- (10, 5, 5, 'Nintendo Switch is a must-have for gamers, highly recommend!', '16:00:00', 20240303, 3, 2024);
+
+-- INSERT INTO Buys (user_id, product_id, quantity, buy_time, buy_date, buy_month, buy_year)
+-- VALUES 
+-- (1, 1, 1, '14:00:00', 20240307, 3, 2024),
+-- (2, 2, 1, '15:00:00', 20240306, 3, 2024),
+-- (3, 3, 1, '16:00:00', 20240305, 3, 2024),
+-- (4, 4, 1, '17:00:00', 20240304, 3, 2024),
+-- (5, 5, 1, '18:00:00', 20240303, 3, 2024),
+-- (6, 1, 1, '14:00:00', 20240307, 3, 2024),
+-- (7, 2, 1, '15:00:00', 20240306, 3, 2024),
+-- (8, 3, 1, '16:00:00', 20240305, 3, 2024),
+-- (9, 4, 1, '17:00:00', 20240304, 3, 2024),
+-- (10, 5, 1, '18:00:00', 20240303, 3, 2024),
+-- (6, 1, 1, '14:00:00', 20240306, 3, 2024),
+-- (7, 2, 1, '15:00:00', 20240305, 3, 2024),
+-- (8, 3, 1, '16:00:00', 20240304, 3, 2024),
+-- (9, 4, 1, '17:00:00', 20240303, 3, 2024),
+-- (10, 5, 1, '18:00:00', 20240302, 3, 2024);
+
+-- INSERT INTO Inventory (product_id, quantity, store_name, city, street_address)
+-- VALUES 
+-- (1, 10, 'Best Buy NYC', 'New York', '789 Broadway'),
+-- (2, 20, 'Best Buy LA', 'Los Angeles', '101 Hollywood Blvd'),
+-- (3, 15, 'Best Buy Chicago', 'Chicago', '456 Lake St'),
+-- (4, 25, 'Best Buy Houston', 'Houston', '789 Forest St'),
+-- (5, 30, 'Best Buy Philadelphia', 'Philadelphia', '123 River St'),
+-- (21, 5, 'Best Buy San Francisco', 'San Francisco', '123 Market St'),
+-- (13, 10, 'Best Buy Seattle', 'Seattle', '456 Pine St'),
+-- (14, 15, 'Best Buy Miami', 'Miami', '789 Ocean Dr'),
+-- (15, 20, 'Best Buy Denver', 'Denver', '101 Mountain Ave'),
+-- (16, 25, 'Best Buy Austin', 'Austin', '654 River Rd'),
+-- (6, 12, 'Best Buy Miami', 'Miami', '789 Ocean Ave'),
+-- (7, 15, 'Best Buy Seattle', 'Seattle', '101 Pine Blvd'),
+-- (8, 18, 'Best Buy Atlanta', 'Atlanta', '456 Peachtree Blvd'),
+-- (9, 20, 'Best Buy Denver', 'Denver', '789 Mountain Blvd'),
+-- (10, 22, 'Best Buy Dallas', 'Dallas', '123 Main Blvd');
